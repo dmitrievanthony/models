@@ -476,7 +476,12 @@ def resnet_main(
   # Creates a `RunConfig` that checkpoints every 24 hours which essentially
   # results in checkpoints determined only by `epochs_between_evals`.
   run_config = tf.estimator.RunConfig(
-      train_distribute=distribution_strategy,
+      #train_distribute=distribution_strategy,
+      experimental_distribute=tf.contrib.distribute.DistributeConfig(
+        train_distribute=tf.contrib.distribute.CollectiveAllReduceStrategy(),
+        eval_distribute=tf.contrib.distribute.MirroredStrategy(),
+        remote_cluster={"worker": ["localhost:10000", "localhost:10001"], "chief":["localhost:10002"]}
+      ),
       session_config=session_config,
       save_checkpoints_secs=60*60*24)
 
@@ -560,8 +565,11 @@ def resnet_main(
     tf.logging.info('Starting cycle: %d/%d', cycle_index, int(n_loops))
 
     if num_train_epochs:
-      classifier.train(input_fn=lambda: input_fn_train(num_train_epochs),
-                       hooks=train_hooks, max_steps=flags_obj.max_train_steps)
+      tf.estimator.train_and_evaluate(
+        classifier,
+        train_spec=tf.estimator.TrainSpec(input_fn=lambda: input_fn_train(num_train_epochs), hooks=train_hooks, max_steps=flags_obj.max_train_steps),
+        eval_spec=tf.estimator.EvalSpec(input_fn=input_fn_eval, steps=flags_obj.max_train_steps)
+      )
 
     tf.logging.info('Starting to evaluate.')
 
